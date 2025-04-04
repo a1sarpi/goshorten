@@ -1,0 +1,31 @@
+definitions:
+  models.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+info:
+  contact: {}
+paths:
+  /{shortcode}:
+    get:
+      description: Redirect to the original URL using the short code
+      parameters:
+      - description: Short URL code
+        in: path
+        name: shortcode
+        required: true
+        type: string
+      responses:
+        "301":
+          description: Redirect to original URL
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Redirect to original URL
+      tags:
+      - urls
+swagger: "2.0"

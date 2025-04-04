@@ -1,0 +1,91 @@
+{
+    "schemes": [
+        "http",
+        "https"
+    ],
+    "swagger": "2.0",
+    "info": {
+        "description": "A URL shortening service with support for PostgreSQL and in-memory storage",
+        "title": "GoShorten API",
+        "contact": {
+            "name": "API Support",
+            "url": "https://github.com/a1sarpi/goshorten"
+        },
+        "license": {
+            "name": "MIT",
+            "url": "https://github.com/a1sarpi/goshorten/blob/main/LICENSE"
+        },
+        "version": "1.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/",
+    "paths": {
+        "/{shortcode}": {
+            "get": {
+                "description": "Redirects to the original URL using the short code. Returns 404 if the URL is not found or has expired.",
+                "tags": [
+                    "urls"
+                ],
+                "summary": "Redirect to original URL",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "abc123",
+                        "description": "Short URL code",
+                        "name": "shortcode",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "301": {
+                        "description": "Redirect to original URL",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request - empty shortcode",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "URL not found or expired",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "URL has expired",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "models.ErrorResponse": {
+            "description": "Error response",
+            "type": "object",
+            "properties": {
+                "code": {
+                    "description": "@example 400",
+                    "type": "integer"
+                },
+                "message": {
+                    "description": "@example Invalid URL format",
+                    "type": "string"
+                }
+            }
+        }
+    }
+}

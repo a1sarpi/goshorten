@@ -1,0 +1,51 @@
+# Конфигурация сервера
+server:
+  port: 8080
+  host: "localhost"
+  read_timeout: "5s"
+  write_timeout: "10s"
+  idle_timeout: "120s"
+
+# Тип хранилища: "memory" или "postgres"
+storage:
+  type: "memory"
+
+# Настройки базы данных PostgreSQL (используются только если storage.type = "postgres")
+database:
+  host: "localhost"
+  port: 5432
+  user: "postgres"
+  password: "postgres"
+  dbname: "goshorten"
+  sslmode: "disable"
+  max_open_conns: 25
+  max_idle_conns: 25
+  conn_max_lifetime: "5m"
+
+# Настройки кэша
+cache:
+  ttl: "1h"
+  cleanup_interval: "30m"
+
+# Настройки rate limiting
+ratelimit:
+  requests: 100  # Количество запросов
+  interval: "1m" # Интервал
+
+# Настройки CORS
+cors:
+  allowed_origins: ["*"]
+  allowed_methods: ["GET", "POST", "OPTIONS"]
+  allowed_headers: ["Content-Type", "Authorization"]
+  allow_credentials: false
+  max_age: 86400 # 24 часа
+
+# Настройки логирования
+logging:
+  level: "info"  # debug, info, warn, error
+  format: "json" # json или text
+
+# Настройки метрик
+metrics:
+  enabled: true
+  path: "/metrics" 

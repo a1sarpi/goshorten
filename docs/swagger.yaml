@@ -1,0 +1,64 @@
+basePath: /
+definitions:
+  models.ErrorResponse:
+    description: Error response
+    properties:
+      code:
+        description: '@example 400'
+        type: integer
+      message:
+        description: '@example Invalid URL format'
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    name: API Support
+    url: https://github.com/a1sarpi/goshorten
+  description: A URL shortening service with support for PostgreSQL and in-memory
+    storage
+  license:
+    name: MIT
+    url: https://github.com/a1sarpi/goshorten/blob/main/LICENSE
+  title: GoShorten API
+  version: "1.0"
+paths:
+  /{shortcode}:
+    get:
+      description: Redirects to the original URL using the short code. Returns 404
+        if the URL is not found or has expired.
+      parameters:
+      - description: Short URL code
+        example: abc123
+        in: path
+        name: shortcode
+        required: true
+        type: string
+      responses:
+        "301":
+          description: Redirect to original URL
+          schema:
+            type: string
+        "400":
+          description: Invalid request - empty shortcode
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: URL not found or expired
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "410":
+          description: URL has expired
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Redirect to original URL
+      tags:
+      - urls
+schemes:
+- http
+- https
+swagger: "2.0"

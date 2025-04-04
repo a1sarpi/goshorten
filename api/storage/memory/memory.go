@@ -1,14 +1,12 @@
 package memory
 
 import (
-	"encoding/json"
 	"errors"
-	"github.com/a1sarpi/goshorten/api/models"
-	"github.com/a1sarpi/goshorten/api/storage"
-	"github.com/a1sarpi/goshorten/pkg/customErrors"
-	"os"
 	"sync"
 	"time"
+
+	"github.com/a1sarpi/goshorten/api/models"
+	"github.com/a1sarpi/goshorten/api/storage"
 )
 
 var (
@@ -17,80 +15,88 @@ var (
 	ErrLoadingFile         = errors.New("failed to load file")
 )
 
-type Local struct {
-	mu   sync.RWMutex
-	data map[string]*models.URL
-	file string
+type MemoryStorage struct {
+	mu    sync.RWMutex
+	urls  map[string]*models.URLModel
+	ttls  map[string]time.Time
+	clean chan struct{}
 }
 
-func NewMemoryStorage() *Local {
-	return &Local{
-		data: make(map[string]*models.URL),
+func NewMemoryStorage() *MemoryStorage {
+	ms := &MemoryStorage{
+		urls:  make(map[string]*models.URLModel),
+		ttls:  make(map[string]time.Time),
+		clean: make(chan struct{}),
 	}
+	go ms.cleanupLoop()
+	return ms
 }
 
-func NewWithPersistence(filename string) *Local {
-	store := &Local{
-		data: make(map[string]*models.URL),
-		file: filename,
-	}
-	store.load()
-	return store
-}
+func (ms *MemoryStorage) Save(url *models.URLModel, ttl time.Duration) error {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
 
-func (ls *Local) Save(url *models.URL) error {
-	ls.mu.Lock()
-	defer ls.mu.Unlock()
-
-	if _, exists := ls.data[url.ShortCode]; exists {
-		return ErrDuplicatedShortCode
+	for _, existingURL := range ms.urls {
+		if existingURL.OriginalURL == url.OriginalURL {
+			return nil
+		}
 	}
 
-	url.CreatedAt = time.Now()
-	ls.data[url.ShortCode] = url
+	ms.urls[url.ShortCode] = url
+	if ttl > 0 {
+		ms.ttls[url.ShortCode] = time.Now().Add(ttl)
+	}
 	return nil
 }
 
-func (ls *Local) Get(code string) (*models.URL, error) {
-	ls.mu.RLock()
-	defer ls.mu.RUnlock()
+func (ms *MemoryStorage) Get(shortCode string) (*models.URLModel, error) {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
 
-	url, exists := ls.data[code]
+	url, exists := ms.urls[shortCode]
 	if !exists {
-		return nil, customErrors.ErrURLNotFound
+		return nil, nil
 	}
+
+	if ttl, hasTTL := ms.ttls[shortCode]; hasTTL {
+		if time.Now().After(ttl) {
+			return nil, nil
+		}
+	}
+
 	return url, nil
 }
 
-func (ls *Local) load() error {
-	ls.mu.Lock()
-	defer ls.mu.Unlock()
+func (ms *MemoryStorage) cleanupLoop() {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
 
-	data, err := os.ReadFile(ls.file)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
+	for {
+		select {
+		case <-ticker.C:
+			ms.cleanup()
+		case <-ms.clean:
+			return
 		}
-		return err
 	}
-
-	return json.Unmarshal(data, &ls.data)
 }
 
-func (ls *Local) save() error {
-	ls.mu.Lock()
-	defer ls.mu.Unlock()
+func (ms *MemoryStorage) cleanup() {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
 
-	data, err := json.MarshalIndent(ls.data, "", "  ")
-	if err != nil {
-		return err
+	now := time.Now()
+	for shortCode, ttl := range ms.ttls {
+		if now.After(ttl) {
+			delete(ms.urls, shortCode)
+			delete(ms.ttls, shortCode)
+		}
 	}
-
-	return os.WriteFile(ls.file, data, 0644)
 }
 
-func (ls *Local) Close() error {
-	return ls.save()
+func (ms *MemoryStorage) Close() error {
+	close(ms.clean)
+	return nil
 }
 
-var _ storage.Storage = (*Local)(nil)
+var _ storage.Storage = (*MemoryStorage)(nil)

@@ -1,73 +1,79 @@
 package postgres
 
-//
-//import (
-//	"errors"
-//	"github.com/a1sarpi/goshorten/api/models"
-//	"github.com/a1sarpi/goshorten/api/storage"
-//	"github.com/a1sarpi/goshorten/pkg/customErrors"
-//	"gorm.io/gorm"
-//	"time"
-//)
-//
-//var _ storage.Storage = (*SQLStorage)(nil)
-//
-//type SQLStorage struct {
-//	db *gorm.DB
-//}
-//
-//func NewSQLStorage(db *gorm.DB) (*SQLStorage, error) {
-//	if err := db.AutoMigrate(&SQLStorage{}); err != nil {
-//		return nil, err
-//	}
-//
-//	return &SQLStorage{db: db}, nil
-//}
-//
-//func (s *SQLStorage) Save(url *models.URL) error {
-//	result := s.db.Create(url)
-//	return result.Error
-//}
-//
-//func (s *SQLStorage) FindByShortCode(code string) (*models.URL, error) {
-//	var url models.URL
-//	result := s.db.Where("short_code = ?", code).First(&url)
-//
-//	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-//		return nil, customErrors.ErrURLNotFound
-//	}
-//
-//	if url.ExpiresAt.Before(time.Now()) {
-//		s.db.Delete(&url)
-//		return nil, customErrors.ErrURLExpired
-//	}
-//
-//	return &url, nil
-//}
-//
-//func (s *SQLStorage) FindByOriginalURL(originalURL string) (*models.URL, error) {
-//	var url models.URL
-//	result := s.db.Where("original_url = ?", originalURL).First(&url)
-//
-//	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-//		return nil, customErrors.ErrURLNotFound
-//	}
-//
-//	return &url, result.Error
-//}
-//
-//func (s *SQLStorage) Delete(code *models.URL) error {
-//	return s.db.Where("short_code = ?", code).Delete(&models.URL{}).Error
-//}
-//
-//func (s *SQLStorage) PurgeExpiredURLs() (int64, error) {
-//	result := s.db.Where("expires_at < ?", time.Now()).Delete(&models.URL{})
-//	return result.RowsAffected, result.Error
-//}
-//
-//func (s *SQLStorage) IncrementClicks(code string) error {
-//	return s.db.Model(&models.URL{}).
-//		Where("short_code = ?", code).
-//		Update("clicks", gorm.Expr("clicks + 1")).
-//		Error
-//}
+import (
+	"context"
+	"database/sql"
+	"time"
+
+	"github.com/a1sarpi/goshorten/api/models"
+	"github.com/a1sarpi/goshorten/api/storage"
+	_ "github.com/lib/pq"
+)
+
+type PostgresStorage struct {
+	db *sql.DB
+}
+
+func NewPostgresStorage(connStr string) (storage.Storage, error) {
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := db.Ping(); err != nil {
+		return nil, err
+	}
+
+	return &PostgresStorage{db: db}, nil
+}
+
+func (ps *PostgresStorage) Save(url *models.URLModel, ttl time.Duration) error {
+	ctx := context.Background()
+
+	var existingShortCode string
+	err := ps.db.QueryRowContext(ctx,
+		"SELECT short_code FROM urls WHERE original_url = $1",
+		url.OriginalURL).Scan(&existingShortCode)
+
+	if err == nil {
+		return nil
+	} else if err != sql.ErrNoRows {
+		return err
+	}
+
+	_, err = ps.db.ExecContext(ctx,
+		"INSERT INTO urls (short_code, original_url, expires_at) VALUES ($1, $2, $3)",
+		url.ShortCode,
+		url.OriginalURL,
+		time.Now().Add(ttl))
+
+	return err
+}
+
+func (ps *PostgresStorage) Get(shortCode string) (*models.URLModel, error) {
+	ctx := context.Background()
+
+	var url models.URLModel
+	var expiresAt sql.NullTime
+
+	err := ps.db.QueryRowContext(ctx,
+		"SELECT short_code, original_url, created_at, expires_at FROM urls WHERE short_code = $1",
+		shortCode).Scan(&url.ShortCode, &url.OriginalURL, &url.CreatedAt, &expiresAt)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if expiresAt.Valid && time.Now().After(expiresAt.Time) {
+		return nil, nil
+	}
+
+	return &url, nil
+}
+
+func (ps *PostgresStorage) Close() error {
+	return ps.db.Close()
+}
